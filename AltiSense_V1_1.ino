@@ -1,35 +1,30 @@
-#define TIMER_INTERRUPT_DEBUG         0
-#define _TIMERINTERRUPT_LOGLEVEL_     0
-#define USE_TIMER_1     true
-#define USE_TIMER_2     true
+/*
+AltiSense Version 1.1
 
-#include <TimerInterrupt.h>
-//#include <ISR_Timer.h>
+Programm zur Distanzmessung mit dem TeraRanger Evo 60m TOF Sensor, Ausgabe der Messwerte
+über ein Display, Datenspeicherung auf einer SD-Karte, Audioausgabe über das DFPlayer mini 
+MP3-Modul
+
+Bearbeitet am 05.10.2021
+*/
+
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <SPI.h>
 #include <SD.h>
-#include <TimeLib.h>
 #include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
 
+#define SENSOR_ADDR 0x31                    // Sensoradresse definieren
 
-#define TIMER1_INTERVAL_MS    100
-#define TIMER2_INTERVAL_MS    1000
+LiquidCrystal_I2C lcd(0x27, 16, 2);         // LCD-Objekt erstellen
 
-#define SENSOR_ADDR 0x31  // Sensoradresse definieren
+File myFile;                                // Datei-Objekt erstellen
 
-LiquidCrystal_I2C lcd(0x27, 16, 2); // construct LCD object
+SoftwareSerial mySoftwareSerial(5,6);       // (RX,TX)  SoftwareSerial-Objekt erstellen
+DFRobotDFPlayerMini myDFPlayer;             // DFPlayer-Objekt für die MP3-Steuerung erstellen
 
-volatile File myFile;      // Datei erstellen
-String filename;
-volatile uint8_t i=0;
-
-SoftwareSerial mySoftwareSerial(5,6); // RX, TX
-DFRobotDFPlayerMini myDFPlayer;
-
-// Custom character definitions
-const char custom[][8] PROGMEM = {                        
+// Definition custom Zeichensatz
+const char custom[][8] PROGMEM = { 
       { 0x1F, 0x1F, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00 }, // char 1 
       { 0x18, 0x1C, 0x1E, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F }, // char 2 
       { 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x0F, 0x07, 0x03 }, // char 3 
@@ -40,10 +35,7 @@ const char custom[][8] PROGMEM = {
       { 0x03, 0x07, 0x0F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F }  // char 8 
 };
 
-// BIG FONT Character Set
-// - Each character coded as 1-4 byte sets {top_row(0), top_row(1)... bot_row(0), bot_row(0)..."}
-// - number of bytes terminated with 0x00; Character is made from [number_of_bytes/2] wide, 2 high
-// - codes are: 0x01-0x08 => custom characters, 0x20 => space, 0xFF => black square
+// Definition große Zeichen
 
 const char bigChars[][8] PROGMEM = {
       { 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, // Space
@@ -111,12 +103,13 @@ const char bigChars[][8] PROGMEM = {
       { 0x08, 0x02, 0x20, 0x20, 0x00, 0x00, 0x00, 0x00 }, // ^
       { 0x20, 0x20, 0x20, 0x04, 0x04, 0x04, 0x00, 0x00 }  // _
 };
-byte col,row,nb=0,bc=0;                                   // general
-byte bb[8];                                               // byte buffer for reading from PROGMEM
+
+byte col,row,nb=0,bc=0;
+byte bb[8];                                               // byte buffer zum Lesen aus PROGMEM
 
 
 
-// Create a Cyclic Redundancy Checks table used in the "crc8" function
+// Tabelle für zyklische Redundanzchecks der "crc8" Funktion
 static const uint8_t crc_table[] = {
     0x00, 0x07, 0x0e, 0x09, 0x1c, 0x1b, 0x12, 0x15, 0x38, 0x3f, 0x36, 0x31,
     0x24, 0x23, 0x2a, 0x2d, 0x70, 0x77, 0x7e, 0x79, 0x6c, 0x6b, 0x62, 0x65,
@@ -142,65 +135,62 @@ static const uint8_t crc_table[] = {
     0xfa, 0xfd, 0xf4, 0xf3
 };
 
-volatile uint8_t buf[3];           // The variable "buf[3]" will contain the frame sent by the TeraRanger
+// ********************************* GLOBALE VARIABLEN ************************************ //
 
-volatile uint16_t offset;
+uint8_t buf[3];           // "buf[3]" nimmt Datenframe des Sensors auf
+
+uint16_t offset;          // Variable für die Speicherung des Offset-Werts für die Justierung
+
+uint16_t distBuf = 0;     // Pufferspeicher für Distanz der vergangenen Messung
+
+uint8_t announced = 0;    // Indikatorvariable für Die Höhenansage
+
+uint8_t timeDiv = 0;      // Zählervariable für Frequenzteiler der Display- und Audioausgabe
+
+String filename;          // Variable für den inkrementierenden Dateinamen
+
+// **************************************************************************************** //
 
 
-// VARIABLES: -----------------
-
-volatile uint16_t distance = 0;    // The variable "distance" will contain the distance value in millimeter
-volatile float distance_m = 0;
-volatile char distance_c[5];
-volatile uint16_t distBuf = 0;
-
-//-----------------------------
-  
-volatile unsigned long t_mil = 0;
-
-// ********************************************************************************** //
-//                                      SETUP
-// ********************************************************************************** //
+// **************************************************************************************** //
+//                                           SETUP                                          //
+// **************************************************************************************** //
 
 void setup() {
 
-
-  // Init timers
-  ITimer1.init();
-  ITimer1.attachInterruptInterval(TIMER1_INTERVAL_MS, timerHandler1, t_mil);
-  ITimer2.init();
-  ITimer2.attachInterruptInterval(TIMER2_INTERVAL_MS, timerHandler2, t_mil);
-
-  Wire.begin();           // Join I2C bus as master
+  Wire.begin();                       // I2C Bus als Master beitreten
   
   // LCD initialisieren
   lcd.begin();
-  for (nb=0; nb<8; nb++ ) {                     // create 8 custom characters
+  for (nb=0; nb<8; nb++ ) {           // Erstellung von 8 custom Zeichen
     for (bc=0; bc<8; bc++) bb[bc]= pgm_read_byte( &custom[nb][bc] );
     lcd.createChar ( nb+1, bb );
   }
   lcd.clear();
-  lcd.setCursor(0,0);
   lcd.backlight();
 
-  //Startbildschirm
-  writeBigString("LOAD", 0, 0);
-
   // SD initialisieren
-   SD.begin(10);
+  while (!SD.begin(10)) {
+    writeBigString("SD", 0, 0);       // Blinkende Displayanzeige "SD" bei fehlender SD-Karte
+    delay(1500);
+    lcd.clear();
+  }
 
-  // Datei mit richtigem Namen erstellen und öffnen
-    for (uint8_t i = 0; i <= 1000; i++){
-    String i_str = String(i);
-    if (!SD.exists(String("data_" + i_str + ".txt"))){
-      filename = String("data_" + i_str + ".txt");
+  //Startbildschirm
+  writeBigString("LOAD", 0, 0);       // Ladebildschirm für restliche Setup()-Funktion
+
+  // Datei mit inkrementiertem, einzigartigem Namen erstellen und öffnen
+  for (uint8_t n = 0; n <= 1000; n++){
+    String i_str = String(n);
+    if (!SD.exists(String("data_" + i_str + ".csv"))){
+      filename = String("data_" + i_str + ".csv");
       break;
     }
   }
   
   myFile = SD.open(filename, FILE_WRITE);
   if(myFile){
-    myFile.println("TIMESTAMP ENTFERNUNG");
+    myFile.println("TIMESTAMP;ENTFERNUNG");
     myFile.close();
   }
 
@@ -209,16 +199,13 @@ void setup() {
   mySoftwareSerial.begin(9600);
   myDFPlayer.begin(mySoftwareSerial);
   myDFPlayer.volume(10);
-  myDFPlayer.playMp3Folder(7);
-  //delay(1000);
-
-  //
+  myDFPlayer.playMp3Folder(7);        // Test-Audio "Minimums" für Audio-Konfiguration
 
 
-  // Kalibrieren 
+  // Justieren 
  pinMode(2, INPUT_PULLUP);
-  if (digitalRead(2) == LOW) {
-    offset = messen();    
+  if (digitalRead(2) == LOW) {        // Knopf gedrückt: 
+    offset = messen();                // Offset wird gemessen und in "offset.txt" gespeichert
     if (SD.exists("offset.txt")) {
       SD.remove("offset.txt");
     }
@@ -233,9 +220,8 @@ void setup() {
     }
   }
   else {
-    myFile = SD.open("offset.txt", FILE_READ);
-
-    if(myFile.available() > 0){
+    myFile = SD.open("offset.txt", FILE_READ);         // Knopf nicht gedrückt:
+    if(myFile.available() > 0){                        // Offsetwert aus Datei wird übernommen
       offset = ((uint16_t) myFile.read() << 8) | (uint16_t) myFile.read();
       myFile.close();
     }
@@ -246,39 +232,119 @@ void setup() {
   }
 
   
-  lcd.clear();
+  lcd.clear();                                         // Ladebildschirm wird zurückgesetzt
   
 }
 
 
-
-// ********************************************************************************** //
-//                                      MAIN LOOP
-// ********************************************************************************** //
+// **************************************************************************************** //
+//                                        MAIN LOOP                                         //
+// **************************************************************************************** //
 
 void loop() {
+  
+  // ************************************ VARIABLEN *************************************** //
 
-  if (messen()<=offset)
-  {
+  uint16_t distance = 0;  // "distance" enthält Abstand in mm, wird um Offset korrigiert
+  float distance_m = 0;   // Distanz als Gleitkommazahl in Metern
+  char distance_c[5];     // Distanz als String für die Ausgabe auf dem Display
+
+  // ************************************************************************************** //
+  
+  distance = messen();
+  
+  if (distance<=offset)                           // Wenn gemessene Distanz < Offset:
+  {                                               // Distanz als 0 setzen
     distance = 0.0;
   }
-  else
+  else                                            // Sonst: Distanz um Offset korrigieren
   {
-    distance = messen()-offset;
+    distance = distance-offset;
   }
-  
-  
+
+
   distance_m = (float) distance / 1000.0;
   dtostrf(distance_m, 5, 1, distance_c);
 
-  t_mil = millis();
+
+  if((distance_m<=30.0) && (distance_m>0.4)){     // Grenzen, ab denen Messfrequenz 1/sek ist
+    
+    // in Datei speichern
+    myFile = SD.open(filename, FILE_WRITE);
+    if(myFile){
+      unsigned long t = millis();                 // Timestamp bekommen
+      myFile.print(t);
+      myFile.print(";");
+      myFile.println(distance);
+      myFile.close();
+    }
+       
+    if(timeDiv<9){          // Frequenzteiler für die Display- und Audioausgabe
+
+      timeDiv++;            // -> Jedes 10. mal werden Display- und Audiofunktionen aufgerufen
+
+    }
+    else{
+
+      timeDiv = 0;
+      // Ausagabe auf Display
+      lcd.setCursor(0,0);
+      lcd.clear();
+      writeBigString(distance_c, 0, 0);
+      writeBigChar('M', 12, 0);
+
+      // Audio-Callout MP3-Modul
+      if ((distBuf-distance > 50) && (distBuf > distance)){
+        
+        callout(distance, mySoftwareSerial);
+        
+        distBuf = distance;
+      }
+
+    }
+
+    delay(100);                                   // Warten von 1/10 sek -> Frequenz ~10/sek
+    
+  }
+
+  else{                                           // Frequenz für Messung ebenfalls 1/sek:
+
+    // Ausagabe auf Display
+    lcd.setCursor(0,0);
+    lcd.clear();
+    writeBigString(distance_c, 0, 0);
+    writeBigChar('M', 12, 0);
+
+    // in Datei speichern
+    myFile = SD.open(filename, FILE_WRITE);
+    if(myFile){
+      unsigned long t = millis();                 // Timestamp bekommen
+      myFile.print(t);
+      myFile.print(";");
+      myFile.println(distance);
+      myFile.close();
+    }
+    
+    // Audio-Callout MP3-Modul
+    if ((distBuf-distance > 50) && (distBuf > distance)){
+      
+      callout(distance, mySoftwareSerial);
+      
+      distBuf = distance;
+    }
+
+    delay(1000);                                  // 1 sek warten -> Frequenz 1/sek
+
+  }
+
+
 }
 
-// ********************************************************************************** //
-//                                      SUBROUTINES
-// ********************************************************************************** //
+// **************************************************************************************** //
+//                                       SUBROUTINEN                                        //
+// **************************************************************************************** //
 
-
+// CRC-Funktion zur Berechnung der Checksumme
 uint8_t crc8(uint8_t *p, uint8_t len) {
   uint8_t i;
   uint8_t crc = 0x0;
@@ -289,27 +355,28 @@ uint8_t crc8(uint8_t *p, uint8_t len) {
   return crc & 0xFF;
 }
 
-// writeBigChar: writes big character 'ch' to column x, row y; returns number of columns used by 'ch'
+// writeBigChar: Schreibt großes Zeichen 'ch' in Spalte x, Zeile y; 
+// gibt Anzahl der von 'ch' verwendeten Spalten zurück
 int writeBigChar(char ch, byte x, byte y) {
-  if (ch < ' ' || ch > '_') return 0;               // If outside table range, do nothing
-  nb=0;                                             // character byte counter 
+  if (ch < ' ' || ch > '_') return 0;                  // Wenn außerhalb Tabelle: Keine Aktion
+  nb=0;                                                // Byte Zähler für Zeichen
   for (bc=0; bc<8; bc++) {                        
-    bb[bc] = pgm_read_byte( &bigChars[ch-' '][bc] );  // read 8 bytes from PROGMEM
+    bb[bc] = pgm_read_byte( &bigChars[ch-' '][bc] );   // 8 Bytes aus PROGMEM lesen
     if(bb[bc] != 0) nb++;
   }  
  
   bc=0;
   for (row = y; row < y+2; row++) {
     for (col = x; col < x+nb/2; col++ ) {
-      lcd.setCursor(col, row);                      // move to position
-      lcd.write(bb[bc++]);                          // write byte and increment to next
+      lcd.setCursor(col, row);                         // gehe zu Position
+      lcd.write(bb[bc++]);                             // Schreibt Byte und zählt hoch
     }
 
   }
-  return nb/2-1;                                      // returns number of columns used by char
+  return nb/2-1;                                    // gibt Anzahl Spalten des Zeichens zurück
 }
 
-// writeBigString: writes out each letter of string
+// writeBigString: Schreibt jeden Buchstaben des Strings
 void writeBigString(char *str, byte x, byte y) {
   char c;
   while ((c = *str++))
@@ -318,28 +385,27 @@ void writeBigString(char *str, byte x, byte y) {
 
 
 // Funktion zum Entfernung messen
-
 uint16_t messen() {
 
   uint16_t dist;
-  uint8_t CRC = 0;          // The variable "CRC" will contain the checksum to compare at TeraRanger's one
+  uint8_t CRC = 0;                        // "CRC" enthält Checksumme zum Vergleich mit Sensor
   
-  Wire.beginTransmission(SENSOR_ADDR);      // Transmit to TR1 (THIS IS THE I2C BASE ADDRESS, CHANGE HERE IN CASE IT IS DIFFERENT)
-    Wire.write(0x00);                         // Sends trigger byte
-    Wire.endTransmission();                   // Stop transmitting
+  Wire.beginTransmission(SENSOR_ADDR);    // Nachricht über I2C an Sensor übermitteln
+    Wire.write(0x00);                     // trigger byte senden
+    Wire.endTransmission();               // Übertragung beenden
   
-    delay(0.5);                               // Delay in between reads
+    delay(0.5);                           // Delay zwischen einzelnen Übertragungen
   
-    Wire.requestFrom(SENSOR_ADDR, 3);          // Read back three bytes from TR1 (THIS IS THE I2C BASE ADDRESS, CHANGE HERE IN CASE IT IS DIFFERENT)
-    buf[0] = Wire.read();               // First byte of distance
-    buf[1] = Wire.read();               // Second byte of distance
-    buf[2] = Wire.read();               // Byte of checksum
+    Wire.requestFrom(SENSOR_ADDR, 3);     // Drei Bytes vom Sensor anfordern und auslesen
+    buf[0] = Wire.read();                 // Erstes Messwert-Byte
+    buf[1] = Wire.read();                 // Zweites Messwert-Byte
+    buf[2] = Wire.read();                 // Checksummen-Byte
     
-    CRC = crc8(buf, 2);                 // Save the "return" checksum in variable "CRC" to compare with the one sent by the TeraRanger
+    CRC = crc8(buf, 2);                   // Erzeugt Checksumme aus beiden empfangenen Bytes
   
     
-    if (CRC == buf[2]) {                // If the function crc8 return the same checksum than the TeraRanger, then:
-      dist = (buf[0]<<8) + buf[1];      // Calculate distance in mm
+    if (CRC == buf[2]) {                  // Vergleich der Checksummen. Wenn identisch: 
+      dist = (buf[0]<<8) + buf[1];        // Distanz wird berechnet und zurückgegeben
      
     }
     else {                                                   
@@ -350,12 +416,8 @@ uint16_t messen() {
     return dist;
 }
 
-// MP3 Ausgabe Höhen-Callout
-
+// Funktion für die Audioausgabe der Höhen-Callouts
 void callout(uint16_t xdistance, SoftwareSerial xmySoftwareSerial) {
-  
-  uint8_t announced = 0;
-
     
   if (myDFPlayer.begin(mySoftwareSerial)){
     
@@ -388,47 +450,13 @@ void callout(uint16_t xdistance, SoftwareSerial xmySoftwareSerial) {
   
 }
 
+/*
 
-void timerHandler1(unsigned long t){
-  if((distance_m<=10.0) && (distance_m>0.4)){
-    
-    // in Datei speichern
-    myFile = SD.open(filename, FILE_WRITE);
-    if(myFile){
-      //unsigned long t = millis(); // Timestamp bekommen
-      myFile.print(t);
-      myFile.print("      ");
-      myFile.println(distance);
-      myFile.close();
-    }       
-  }
-}
+Teile dieses Codes orientieren sich an folgenden Quellen:
 
-void timerHandler2(unsigned long t){
-  if (!((distance_m<=10.0) && (distance_m>0.4))) {
+http://woodsgood.ca/projects/2015/02/17/big-font-lcd-characters/
 
-    // in Datei speichern
-    myFile = SD.open(filename, FILE_WRITE);
-    if(myFile){
-      //unsigned long t = millis(); // Timestamp bekommen
-      myFile.print(t);
-      myFile.print("      ");
-      myFile.println(distance);
-      myFile.close();
-    }
-  }
+https://github.com/Terabee/sample_codes/blob/master/Arduino/
+TeraRanger_single_point_Arduino_I2C/TeraRanger_single_point_Arduino_I2C.ino
 
-  // Ausagabe auf Display
-  lcd.setCursor(0,0);
-  lcd.clear();
-  writeBigString(distance_c, 0, 0);
-  writeBigChar('M', 12, 0);
-
-      // Audio-Callout MP3-Modul
-  if ((distBuf-distance > 50) && (distBuf > distance)){
-    
-    callout(distance, mySoftwareSerial);
-    
-    distBuf = distance;
-  }
-}
+*/
