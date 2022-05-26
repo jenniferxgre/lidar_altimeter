@@ -4,7 +4,7 @@
 This project was conducted as part of a university project at the HSRM university of applied sciences, Germany. The goal of the project was to evaluate the concept of utilizing optical distance sensors for determination of hight above ground in smaller aircraft. This provides higher safety in low visability conditions, such as night-VFR or special VFR conditions in GA aircraft not equipped with heavy and expensive radar altimeters.
 
 ## Hardware
-Due to budget constraints, TeraBee's "TeraRanger Evo 60m" was chosen. It provides TOF-based infrared ranging for distances up to 60 meters and can be interfaced via I2C or UART. The data transmission is boosted by I2C extender chips to compensate for increased line capacity of the 6 meter telephone cable and allow I2C to be used.
+Due to budget constraints, TeraBee's "TeraRanger Evo 60m" was chosen. It provides TOF-based infrared ranging for distances of up to 60 meters and can be interfaced via I2C or UART. The data transmission is boosted by I2C extender chips to compensate for increased line capacity of the 6 meter telephone cable and allow I2C to be used.
 
 An Arduino nano microcontroller serves as the brains of the sensor system and coordinates all data exchange between the different components.
 
