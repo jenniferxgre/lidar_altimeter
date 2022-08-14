@@ -1,11 +1,12 @@
 /*
 AltiSense Version 1.1
 
-Programm zur Distanzmessung mit dem TeraRanger Evo 60m TOF Sensor, Ausgabe der Messwerte
-über ein Display, Datenspeicherung auf einer SD-Karte, Audioausgabe über das DFPlayer mini 
-MP3-Modul
+software for measuring distance with a TeraTanger Evo 60m TOF sensor, displaying distance
+on an LCD display, saving data on an SD card and playing back audio callout via DFPlayer 
+mini MP3 module
 
-Bearbeitet am 05.10.2021
+last changed on 05.10.2021
+translated to english on 14.08.2022
 */
 
 #include <Wire.h>
@@ -14,16 +15,16 @@ Bearbeitet am 05.10.2021
 #include <SoftwareSerial.h>
 #include <DFRobotDFPlayerMini.h>
 
-#define SENSOR_ADDR 0x31                    // Sensoradresse definieren
+#define SENSOR_ADDR 0x31                    // define sensor address
 
-LiquidCrystal_I2C lcd(0x27, 16, 2);         // LCD-Objekt erstellen
+LiquidCrystal_I2C lcd(0x27, 16, 2);         // declare lcd object
 
-File myFile;                                // Datei-Objekt erstellen
+File myFile;                                // declare File object
 
-SoftwareSerial mySoftwareSerial(5,6);       // (RX,TX)  SoftwareSerial-Objekt erstellen
-DFRobotDFPlayerMini myDFPlayer;             // DFPlayer-Objekt für die MP3-Steuerung erstellen
+SoftwareSerial mySoftwareSerial(5,6);       // (RX,TX)  declare SoftwareSerial object
+DFRobotDFPlayerMini myDFPlayer;             // declare DFPlayer object for mp3 control
 
-// Definition custom Zeichensatz
+// custom char set definition
 const char custom[][8] PROGMEM = { 
       { 0x1F, 0x1F, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00 }, // char 1 
       { 0x18, 0x1C, 0x1E, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F }, // char 2 
@@ -35,7 +36,7 @@ const char custom[][8] PROGMEM = {
       { 0x03, 0x07, 0x0F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F }  // char 8 
 };
 
-// Definition große Zeichen
+// Definition big chars
 
 const char bigChars[][8] PROGMEM = {
       { 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, // Space
@@ -105,11 +106,11 @@ const char bigChars[][8] PROGMEM = {
 };
 
 byte col,row,nb=0,bc=0;
-byte bb[8];                                               // byte buffer zum Lesen aus PROGMEM
+byte bb[8];                                               // byte buffer for reading from PROGMEM
 
 
 
-// Tabelle für zyklische Redundanzchecks der "crc8" Funktion
+// table for cyclic redundancy checks of "crc8" function
 static const uint8_t crc_table[] = {
     0x00, 0x07, 0x0e, 0x09, 0x1c, 0x1b, 0x12, 0x15, 0x38, 0x3f, 0x36, 0x31,
     0x24, 0x23, 0x2a, 0x2d, 0x70, 0x77, 0x7e, 0x79, 0x6c, 0x6b, 0x62, 0x65,
@@ -135,19 +136,19 @@ static const uint8_t crc_table[] = {
     0xfa, 0xfd, 0xf4, 0xf3
 };
 
-// ********************************* GLOBALE VARIABLEN ************************************ //
+// ********************************* GLOBAL VARIABLES ************************************* //
 
-uint8_t buf[3];           // "buf[3]" nimmt Datenframe des Sensors auf
+uint8_t buf[3];           // "buf[3]" takes data frame from sensor
 
-uint16_t offset;          // Variable für die Speicherung des Offset-Werts für die Justierung
+uint16_t offset;          // memory for saving height offset value
 
-uint16_t distBuf = 0;     // Pufferspeicher für Distanz der vergangenen Messung
+uint16_t distBuf = 0;     // buffer for last measured distance
 
-uint8_t announced = 0;    // Indikatorvariable für Die Höhenansage
+uint8_t announced = 0;    // indicator variable for audio output
 
-uint8_t timeDiv = 0;      // Zählervariable für Frequenzteiler der Display- und Audioausgabe
+uint8_t timeDiv = 0;      // counter variable for display & audio freq. divider
 
-String filename;          // Variable für den inkrementierenden Dateinamen
+String filename;          // variable for incrementing file name
 
 // **************************************************************************************** //
 
@@ -158,28 +159,28 @@ String filename;          // Variable für den inkrementierenden Dateinamen
 
 void setup() {
 
-  Wire.begin();                       // I2C Bus als Master beitreten
+  Wire.begin();                       // join I2C bus as master
   
-  // LCD initialisieren
+  // initialize LCD
   lcd.begin();
-  for (nb=0; nb<8; nb++ ) {           // Erstellung von 8 custom Zeichen
+  for (nb=0; nb<8; nb++ ) {           // generate 8 custom chars
     for (bc=0; bc<8; bc++) bb[bc]= pgm_read_byte( &custom[nb][bc] );
     lcd.createChar ( nb+1, bb );
   }
   lcd.clear();
   lcd.backlight();
 
-  // SD initialisieren
+  // initialize SD
   while (!SD.begin(10)) {
-    writeBigString("SD", 0, 0);       // Blinkende Displayanzeige "SD" bei fehlender SD-Karte
+    writeBigString("SD", 0, 0);       // blinking "SD" on display in case no SD inserted
     delay(1500);
     lcd.clear();
   }
 
-  //Startbildschirm
-  writeBigString("LOAD", 0, 0);       // Ladebildschirm für restliche Setup()-Funktion
+  //loading screen
+  writeBigString("LOAD", 0, 0);       // loading screen for remaining Setup() function
 
-  // Datei mit inkrementiertem, einzigartigem Namen erstellen und öffnen
+  // open new file with incrementing file name
   for (uint8_t n = 0; n <= 1000; n++){
     String i_str = String(n);
     if (!SD.exists(String("data_" + i_str + ".csv"))){
@@ -195,17 +196,17 @@ void setup() {
   }
 
 
-  // MP3 Modul initialisieren
+  // initialize mp3 module
   mySoftwareSerial.begin(9600);
   myDFPlayer.begin(mySoftwareSerial);
   myDFPlayer.volume(10);
-  myDFPlayer.playMp3Folder(7);        // Test-Audio "Minimums" für Audio-Konfiguration
+  myDFPlayer.playMp3Folder(7);        // play test audio ("minimums")
 
 
-  // Justieren 
+  // adjusting
  pinMode(2, INPUT_PULLUP);
-  if (digitalRead(2) == LOW) {        // Knopf gedrückt: 
-    offset = messen();                // Offset wird gemessen und in "offset.txt" gespeichert
+  if (digitalRead(2) == LOW) {        // button pressed: 
+    offset = messen();                // offset is measured and saved in "offset.txt"
     if (SD.exists("offset.txt")) {
       SD.remove("offset.txt");
     }
@@ -220,8 +221,8 @@ void setup() {
     }
   }
   else {
-    myFile = SD.open("offset.txt", FILE_READ);         // Knopf nicht gedrückt:
-    if(myFile.available() > 0){                        // Offsetwert aus Datei wird übernommen
+    myFile = SD.open("offset.txt", FILE_READ);         // button not pressed:
+    if(myFile.available() > 0){                        // offset value is loaded from file
       offset = ((uint16_t) myFile.read() << 8) | (uint16_t) myFile.read();
       myFile.close();
     }
@@ -232,7 +233,7 @@ void setup() {
   }
 
   
-  lcd.clear();                                         // Ladebildschirm wird zurückgesetzt
+  lcd.clear();                                         // loading screen reset
   
 }
 
@@ -243,21 +244,21 @@ void setup() {
 
 void loop() {
   
-  // ************************************ VARIABLEN *************************************** //
+  // ************************************ VARIABLES *************************************** //
 
-  uint16_t distance = 0;  // "distance" enthält Abstand in mm, wird um Offset korrigiert
-  float distance_m = 0;   // Distanz als Gleitkommazahl in Metern
-  char distance_c[5];     // Distanz als String für die Ausgabe auf dem Display
+  uint16_t distance = 0;  // "distance" includes distance in mm, gets corrected by offset
+  float distance_m = 0;   // distance as float in metres
+  char distance_c[5];     // distance as string for lcd display
 
   // ************************************************************************************** //
   
   distance = messen();
   
-  if (distance<=offset)                           // Wenn gemessene Distanz < Offset:
-  {                                               // Distanz als 0 setzen
+  if (distance<=offset)                           // if measured distance < offset:
+  {                                               // distance = 0
     distance = 0.0;
   }
-  else                                            // Sonst: Distanz um Offset korrigieren
+  else                                            // else: distance gets corrected by offset
   {
     distance = distance-offset;
   }
@@ -267,33 +268,33 @@ void loop() {
   dtostrf(distance_m, 5, 1, distance_c);
 
 
-  if((distance_m<=30.0) && (distance_m>0.4)){     // Grenzen, ab denen Messfrequenz 1/sek ist
+  if((distance_m<=30.0) && (distance_m>0.4)){     // threshold at which measuring frequency = 1/sec
     
-    // in Datei speichern
+    // save to file
     myFile = SD.open(filename, FILE_WRITE);
     if(myFile){
-      unsigned long t = millis();                 // Timestamp bekommen
+      unsigned long t = millis();                 // get timestamp
       myFile.print(t);
       myFile.print(";");
       myFile.println(distance);
       myFile.close();
     }
        
-    if(timeDiv<9){          // Frequenzteiler für die Display- und Audioausgabe
+    if(timeDiv<9){          // frequency divider for display & audio
 
-      timeDiv++;            // -> Jedes 10. mal werden Display- und Audiofunktionen aufgerufen
+      timeDiv++;            // -> functions for display & audio get triggered every 10th time
 
     }
     else{
 
       timeDiv = 0;
-      // Ausagabe auf Display
+      // display on lcd
       lcd.setCursor(0,0);
       lcd.clear();
       writeBigString(distance_c, 0, 0);
       writeBigChar('M', 12, 0);
 
-      // Audio-Callout MP3-Modul
+      // audio callout MP3 module
       if ((distBuf-distance > 50) && (distBuf > distance)){
         
         callout(distance, mySoftwareSerial);
@@ -303,29 +304,29 @@ void loop() {
 
     }
 
-    delay(100);                                   // Warten von 1/10 sek -> Frequenz ~10/sek
+    delay(100);                                   // waiting 1/10 sec -> frequency ~10/sec
     
   }
 
-  else{                                           // Frequenz für Messung ebenfalls 1/sek:
+  else{                                           // measuring frequency also 1/sec:
 
-    // Ausagabe auf Display
+    // display on lcd
     lcd.setCursor(0,0);
     lcd.clear();
     writeBigString(distance_c, 0, 0);
     writeBigChar('M', 12, 0);
 
-    // in Datei speichern
+    // save to file
     myFile = SD.open(filename, FILE_WRITE);
     if(myFile){
-      unsigned long t = millis();                 // Timestamp bekommen
+      unsigned long t = millis();                 // get timestamp
       myFile.print(t);
       myFile.print(";");
       myFile.println(distance);
       myFile.close();
     }
     
-    // Audio-Callout MP3-Modul
+    // audio callout MP3 module
     if ((distBuf-distance > 50) && (distBuf > distance)){
       
       callout(distance, mySoftwareSerial);
@@ -333,7 +334,7 @@ void loop() {
       distBuf = distance;
     }
 
-    delay(1000);                                  // 1 sek warten -> Frequenz 1/sek
+    delay(1000);                                  // wait for 1 sec -> frequency 1/sec
 
   }
 
@@ -341,10 +342,10 @@ void loop() {
 }
 
 // **************************************************************************************** //
-//                                       SUBROUTINEN                                        //
+//                                       SUBROUTINES                                        //
 // **************************************************************************************** //
 
-// CRC-Funktion zur Berechnung der Checksumme
+// CRC function for checksum calculation
 uint8_t crc8(uint8_t *p, uint8_t len) {
   uint8_t i;
   uint8_t crc = 0x0;
@@ -355,28 +356,28 @@ uint8_t crc8(uint8_t *p, uint8_t len) {
   return crc & 0xFF;
 }
 
-// writeBigChar: Schreibt großes Zeichen 'ch' in Spalte x, Zeile y; 
-// gibt Anzahl der von 'ch' verwendeten Spalten zurück
+// writeBigChar: writes big char 'ch' into column x, row y; 
+// returns number of columns used by 'ch'
 int writeBigChar(char ch, byte x, byte y) {
-  if (ch < ' ' || ch > '_') return 0;                  // Wenn außerhalb Tabelle: Keine Aktion
-  nb=0;                                                // Byte Zähler für Zeichen
+  if (ch < ' ' || ch > '_') return 0;                  // if outside of table: no action
+  nb=0;                                                // Byte counter for chars
   for (bc=0; bc<8; bc++) {                        
-    bb[bc] = pgm_read_byte( &bigChars[ch-' '][bc] );   // 8 Bytes aus PROGMEM lesen
+    bb[bc] = pgm_read_byte( &bigChars[ch-' '][bc] );   // read 8 Bytes from PROGMEM
     if(bb[bc] != 0) nb++;
   }  
  
   bc=0;
   for (row = y; row < y+2; row++) {
     for (col = x; col < x+nb/2; col++ ) {
-      lcd.setCursor(col, row);                         // gehe zu Position
-      lcd.write(bb[bc++]);                             // Schreibt Byte und zählt hoch
+      lcd.setCursor(col, row);                         // go to position
+      lcd.write(bb[bc++]);                             // write Byte and increment
     }
 
   }
-  return nb/2-1;                                    // gibt Anzahl Spalten des Zeichens zurück
+  return nb/2-1;                                    // return number of columns for char
 }
 
-// writeBigString: Schreibt jeden Buchstaben des Strings
+// writeBigString: writes every letter of a string
 void writeBigString(char *str, byte x, byte y) {
   char c;
   while ((c = *str++))
@@ -384,28 +385,28 @@ void writeBigString(char *str, byte x, byte y) {
 }
 
 
-// Funktion zum Entfernung messen
+// function for measuring distance
 uint16_t messen() {
 
   uint16_t dist;
-  uint8_t CRC = 0;                        // "CRC" enthält Checksumme zum Vergleich mit Sensor
+  uint8_t CRC = 0;                        // "CRC" includes checksum for comparison with sensor
   
-  Wire.beginTransmission(SENSOR_ADDR);    // Nachricht über I2C an Sensor übermitteln
-    Wire.write(0x00);                     // trigger byte senden
-    Wire.endTransmission();               // Übertragung beenden
+  Wire.beginTransmission(SENSOR_ADDR);    // transmit message to sensor via I2C
+    Wire.write(0x00);                     // send trigger byte
+    Wire.endTransmission();               // end transmission
   
-    delay(0.5);                           // Delay zwischen einzelnen Übertragungen
+    delay(0.5);                           // delay between transmissions
   
-    Wire.requestFrom(SENSOR_ADDR, 3);     // Drei Bytes vom Sensor anfordern und auslesen
-    buf[0] = Wire.read();                 // Erstes Messwert-Byte
-    buf[1] = Wire.read();                 // Zweites Messwert-Byte
-    buf[2] = Wire.read();                 // Checksummen-Byte
+    Wire.requestFrom(SENSOR_ADDR, 3);     // retrieve three Bytes from sensor
+    buf[0] = Wire.read();                 // first distance byte
+    buf[1] = Wire.read();                 // second distance byte
+    buf[2] = Wire.read();                 // crc byte
     
-    CRC = crc8(buf, 2);                   // Erzeugt Checksumme aus beiden empfangenen Bytes
+    CRC = crc8(buf, 2);                   // calculates checksum from both received data bytes
   
     
-    if (CRC == buf[2]) {                  // Vergleich der Checksummen. Wenn identisch: 
-      dist = (buf[0]<<8) + buf[1];        // Distanz wird berechnet und zurückgegeben
+    if (CRC == buf[2]) {                  // compares checksums; if identical: 
+      dist = (buf[0]<<8) + buf[1];        // calculate and return distance
      
     }
     else {                                                   
@@ -416,7 +417,7 @@ uint16_t messen() {
     return dist;
 }
 
-// Funktion für die Audioausgabe der Höhen-Callouts
+// audio output function
 void callout(uint16_t xdistance, SoftwareSerial xmySoftwareSerial) {
     
   if (myDFPlayer.begin(mySoftwareSerial)){
@@ -452,7 +453,7 @@ void callout(uint16_t xdistance, SoftwareSerial xmySoftwareSerial) {
 
 /*
 
-Teile dieses Codes orientieren sich an folgenden Quellen:
+parts of this code are based upon the following sources:
 
 http://woodsgood.ca/projects/2015/02/17/big-font-lcd-characters/
 
