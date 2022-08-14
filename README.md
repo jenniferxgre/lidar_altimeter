@@ -14,6 +14,8 @@ An I2C LCD display serves as live distance indicator, which is updated every sec
 
 Audio callouts are played at specific heights through the "DFPlayer Mini" MP3 module.
 
+The 3D files for the sensor mount and the case for the electronics can be found in the CAD directory. A BOM for all components used in the project is available as BOM.pdf
+
 ## Software
 The .ino-file implemented on the arduino nano for the project can be found in the repository: AltiSense_V1_1.ino
 
